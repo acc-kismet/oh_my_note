@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { useCreateBlockNote, createReactBlockSpec, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
@@ -6,7 +7,7 @@ import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 import "@excalidraw/excalidraw/index.css";
 
-function ExcalidrawCanvas({ block, editor }) {
+function ExcalidrawMount({ containerRef, block, editor }) {
   const [Comp, setComp] = useState(null);
 
   useEffect(() => {
@@ -17,22 +18,14 @@ function ExcalidrawCanvas({ block, editor }) {
     return () => { cancelled = true; };
   }, []);
 
-  if (!Comp) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#8a7966", fontSize: 14 }}>
-        画板加载中...
-      </div>
-    );
-  }
+  if (!Comp || !containerRef.current) return null;
 
   return (
     <Comp
       onChange={(elements, appState) => {
         const data = JSON.stringify({
           elements,
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-          },
+          appState: { viewBackgroundColor: appState.viewBackgroundColor },
         });
         if (data !== block.props.data) {
           editor.updateBlock(block, { props: { data } });
@@ -56,7 +49,7 @@ const ExcalidrawBlock = createReactBlockSpec(
             </div>
           </div>
           <div className="board-block__canvas">
-            <ExcalidrawCanvas block={block} editor={editor} />
+            <ExcalidrawLoader block={block} editor={editor} />
           </div>
         </div>
       );
@@ -64,24 +57,64 @@ const ExcalidrawBlock = createReactBlockSpec(
   },
 );
 
+function ExcalidrawLoader({ block, editor }) {
+  const ref = useRef(null);
+  const [mounted, setMounted] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted || !ref.current) return;
+    let cancelled = false;
+    let root = null;
+
+    import("@excalidraw/excalidraw").then((mod) => {
+      if (cancelled || !ref.current) return;
+      root = createRoot(ref.current);
+      root.render(
+        <mod.Excalidraw
+          onChange={(elements, appState) => {
+            const data = JSON.stringify({
+              elements,
+              appState: { viewBackgroundColor: appState.viewBackgroundColor },
+            });
+            if (data !== block.props.data) {
+              editor.updateBlock(block, { props: { data } });
+            }
+          }}
+        />
+      );
+      setReady(true);
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (root) root.unmount();
+    };
+  }, [mounted]);
+
+  if (!mounted) return null;
+
+  return (
+    <div ref={ref} style={{ height: "100%", width: "100%" }}>
+      {!ready && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#8a7966", fontSize: 14 }}>
+          画板加载中...
+        </div>
+      )}
+    </div>
+  );
+}
+
 const schema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, excalidraw: ExcalidrawBlock },
 });
 
 const initialContent = [
-  {
-    type: "heading",
-    props: { level: 1 },
-    content: "轻文档画板",
-  },
-  {
-    type: "paragraph",
-    content: "输入 / 打开中文快捷菜单。试试 /一级标题、/二级标题、/待办、/画板",
-  },
-  {
-    type: "checkListItem",
-    content: "把文档和白板放在同一个工作流里",
-  },
+  { type: "heading", props: { level: 1 }, content: "轻文档画板" },
+  { type: "paragraph", content: "输入 / 打开中文快捷菜单。试试 /一级标题、/二级标题、/待办、/画板" },
+  { type: "checkListItem", content: "把文档和白板放在同一个工作流里" },
 ];
 
 function makeSlashItems(editor) {
@@ -91,62 +124,14 @@ function makeSlashItems(editor) {
   };
 
   return [
-    {
-      title: "一级标题",
-      subtext: "大标题",
-      icon: "H1",
-      key: "heading",
-      onItemClick: () => insert({ type: "heading", props: { level: 1 }, content: "" }),
-    },
-    {
-      title: "二级标题",
-      subtext: "中标题",
-      icon: "H2",
-      key: "heading_2",
-      onItemClick: () => insert({ type: "heading", props: { level: 2 }, content: "" }),
-    },
-    {
-      title: "三级标题",
-      subtext: "小标题",
-      icon: "H3",
-      key: "heading_3",
-      onItemClick: () => insert({ type: "heading", props: { level: 3 }, content: "" }),
-    },
-    {
-      title: "正文",
-      subtext: "普通段落",
-      icon: "P",
-      key: "paragraph",
-      onItemClick: () => insert({ type: "paragraph", content: "" }),
-    },
-    {
-      title: "待办列表",
-      subtext: "可勾选任务",
-      icon: "☑",
-      key: "checkListItem",
-      onItemClick: () => insert({ type: "checkListItem", content: "" }),
-    },
-    {
-      title: "无序列表",
-      subtext: "项目符号列表",
-      icon: "•",
-      key: "bulletListItem",
-      onItemClick: () => insert({ type: "bulletListItem", content: "" }),
-    },
-    {
-      title: "有序列表",
-      subtext: "编号列表",
-      icon: "1.",
-      key: "numberedListItem",
-      onItemClick: () => insert({ type: "numberedListItem", content: "" }),
-    },
-    {
-      title: "画板",
-      subtext: "Excalidraw 画布",
-      icon: "🎨",
-      key: "excalidraw",
-      onItemClick: () => insert({ type: "excalidraw", props: { data: "" } }),
-    },
+    { title: "一级标题", subtext: "大标题", icon: "H1", key: "heading", onItemClick: () => insert({ type: "heading", props: { level: 1 }, content: "" }) },
+    { title: "二级标题", subtext: "中标题", icon: "H2", key: "heading_2", onItemClick: () => insert({ type: "heading", props: { level: 2 }, content: "" }) },
+    { title: "三级标题", subtext: "小标题", icon: "H3", key: "heading_3", onItemClick: () => insert({ type: "heading", props: { level: 3 }, content: "" }) },
+    { title: "正文", subtext: "普通段落", icon: "P", key: "paragraph", onItemClick: () => insert({ type: "paragraph", content: "" }) },
+    { title: "待办列表", subtext: "可勾选任务", icon: "☑", key: "checkListItem", onItemClick: () => insert({ type: "checkListItem", content: "" }) },
+    { title: "无序列表", subtext: "项目符号列表", icon: "•", key: "bulletListItem", onItemClick: () => insert({ type: "bulletListItem", content: "" }) },
+    { title: "有序列表", subtext: "编号列表", icon: "1.", key: "numberedListItem", onItemClick: () => insert({ type: "numberedListItem", content: "" }) },
+    { title: "画板", subtext: "Excalidraw 画布", icon: "🎨", key: "excalidraw", onItemClick: () => insert({ type: "excalidraw", props: { data: "" } }) },
   ];
 }
 
