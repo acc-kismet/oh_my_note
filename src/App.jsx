@@ -1,9 +1,46 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCreateBlockNote, createReactBlockSpec, SuggestionMenuController } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import { BlockNoteSchema, defaultBlockSpecs } from "@blocknote/core";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
+import "@excalidraw/excalidraw/index.css";
+
+function ExcalidrawCanvas({ block, editor }) {
+  const [Comp, setComp] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    import("@excalidraw/excalidraw").then((mod) => {
+      if (!cancelled) setComp(() => mod.Excalidraw);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!Comp) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#8a7966", fontSize: 14 }}>
+        画板加载中...
+      </div>
+    );
+  }
+
+  return (
+    <Comp
+      onChange={(elements, appState) => {
+        const data = JSON.stringify({
+          elements,
+          appState: {
+            viewBackgroundColor: appState.viewBackgroundColor,
+          },
+        });
+        if (data !== block.props.data) {
+          editor.updateBlock(block, { props: { data } });
+        }
+      }}
+    />
+  );
+}
 
 const ExcalidrawBlock = createReactBlockSpec(
   { type: "excalidraw", propSchema: { data: { default: "" } }, content: "none" },
@@ -18,44 +55,14 @@ const ExcalidrawBlock = createReactBlockSpec(
               <strong>内嵌画板</strong>
             </div>
           </div>
-          <div className="board-block__canvas" id={`excalidraw-${block.id}`}>
-            <ExcalidrawWrapper block={block} editor={editor} />
+          <div className="board-block__canvas">
+            <ExcalidrawCanvas block={block} editor={editor} />
           </div>
         </div>
       );
     },
   },
 );
-
-function ExcalidrawWrapper({ block, editor }) {
-  const [Excalidraw, setExcalidraw] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useCallback(() => {
-    import("@excalidraw/excalidraw").then((mod) => {
-      setExcalidraw(() => mod.Excalidraw);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#8a7966" }}>
-        正在加载画板...
-      </div>
-    );
-  }
-
-  if (!Excalidraw) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#8a7966" }}>
-        画板加载失败
-      </div>
-    );
-  }
-
-  return <Excalidraw />;
-}
 
 const schema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, excalidraw: ExcalidrawBlock },
@@ -198,7 +205,11 @@ function App() {
             <span>BlockNote / Excalidraw</span>
           </div>
           <BlockNoteView editor={editor} slashMenu={false} theme="light">
-            <SuggestionMenuController triggerCharacter="/" getItems={getSlashItems} />
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={getSlashItems}
+              onItemClick={(item) => item.onItemClick()}
+            />
           </BlockNoteView>
         </article>
       </section>
